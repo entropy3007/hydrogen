@@ -29,13 +29,17 @@ export async function loader(args) {
  * @param {LoaderFunctionArgs}
  */
 async function loadCriticalData({context}) {
-  const [{collections}] = await Promise.all([
+  const [{collections}, latestBlog] = await Promise.all([
     context.storefront.query(FEATURED_COLLECTION_QUERY),
+    context.storefront.query(LATEST_BLOG_QUERY, {
+      variables: {blogHandle: 'news'},
+    }),
     // Add other queries here, so that they are loaded in parallel
   ]);
 
   return {
     featuredCollection: collections.nodes[0],
+    latestBlog: latestBlog?.blog ?? {},
   };
 }
 
@@ -62,10 +66,41 @@ function loadDeferredData({context}) {
 export default function Homepage() {
   /** @type {LoaderReturnData} */
   const data = useLoaderData();
+  // console.log(data.latestBlog);
+  
   return (
     <div className="home">
       <FeaturedCollection collection={data.featuredCollection} />
       <RecommendedProducts products={data.recommendedProducts} />
+      <LatestBlog data={data.latestBlog} />
+    </div>
+  );
+}
+
+function LatestBlog({data}) {
+  if (!data) return null;
+
+  return (
+    <div style={{margin: '60px 0'}}>
+      <h2>Latest Blog</h2>
+      <Link to={`/blogs/${data.handle}`}>View all</Link>
+      <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '20px', margin: '30px 0 0'}}>
+        {data?.articles?.nodes?.length > 0 && data?.articles?.nodes.map((item) => (
+          <Link
+            key={item.id}
+            to={`/blogs/${data.handle}/${item.handle}`}
+          >
+            <span style={{aspectRatio: '4/2'}}>
+              <Image
+                data={item.image}
+                sizes="(min-width: 45em) 40vw, 80vw"
+                style={{height: '100%', objectFit: 'cover'}}
+              />
+            </span>
+            <h4>{item.title}</h4>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
@@ -133,6 +168,43 @@ function RecommendedProducts({products}) {
     </div>
   );
 }
+
+const LATEST_BLOG_QUERY = `#graphql
+query Blog(
+  $language: LanguageCode
+  $blogHandle: String!
+) @inContext(language: $language) {
+  blog(handle: $blogHandle) {
+    title
+    handle
+    articles(first: 4) {
+      nodes {
+        ...ArticleItem
+      }
+    }
+  }
+}
+fragment ArticleItem on Article {
+  author: authorV2 {
+    name
+  }
+  contentHtml
+  handle
+  id
+  image {
+    id
+    altText
+    url
+    width
+    height
+  }
+  publishedAt
+  title
+  blog {
+    handle
+  }
+}
+`;
 
 const FEATURED_COLLECTION_QUERY = `#graphql
   fragment FeaturedCollection on Collection {
